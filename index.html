@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -50,7 +49,11 @@
       display: block;
     }
 
-    /* Centered scanning box */
+    /* --------------------------------------------------
+       Visible scanning box
+       KEEPING THE ORIGINAL SIZE
+       -------------------------------------------------- */
+
     #scan-box {
       position: absolute;
       left: 8%;
@@ -119,7 +122,7 @@
   <h1>UIC ID Checker</h1>
 
   <div id="status">
-    Position UIN in the box
+    Position iCard in this box
   </div>
 
   <div id="camera-container">
@@ -133,7 +136,7 @@
 
     <div id="scan-box">
       <div id="scan-label">
-        Position UIN in this box
+        Position iCard in this box
       </div>
     </div>
 
@@ -197,7 +200,7 @@ async function startCamera() {
     await video.play();
 
     status.textContent =
-      "Position UIN in the box";
+      "Position iCard in this box";
 
     scanning = true;
 
@@ -243,7 +246,7 @@ function captureFrame() {
 
 
 // --------------------------------------------------
-// Crop the CENTER scanning box
+// Crop BOTTOM-LEFT portion of scanning box
 // --------------------------------------------------
 
 function cropScanningBox(sourceCanvas) {
@@ -252,30 +255,69 @@ function cropScanningBox(sourceCanvas) {
   const height = sourceCanvas.height;
 
   /*
-    This corresponds approximately to:
+    Visible scanning box:
 
-       left:   8%
-       top:   35%
-       width: 84%
-       height:30%
+        left:   8%
+        top:   35%
+        width: 84%
+        height:30%
 
-    Same proportions as the visible box.
+    The UIN is located toward the
+    BOTTOM-LEFT of this box.
+
+    OCR region:
+
+        left part  = 55% of box width
+        bottom part = 40% of box height
   */
 
-  const x = width * 0.08;
-  const y = height * 0.35;
+  const boxX = width * 0.08;
+  const boxY = height * 0.35;
 
-  const cropWidth = width * 0.84;
-  const cropHeight = height * 0.30;
+  const boxWidth = width * 0.84;
+  const boxHeight = height * 0.30;
+
+
+  // -----------------------------------------------
+  // UIN OCR region
+  // -----------------------------------------------
+
+  const x = boxX;
+
+  const y =
+    boxY +
+    boxHeight * 0.60;
+
+  const cropWidth =
+    boxWidth * 0.60;
+
+  const cropHeight =
+    boxHeight * 0.40;
+
 
   const cropCanvas =
     document.createElement("canvas");
 
-  cropCanvas.width = cropWidth;
-  cropCanvas.height = cropHeight;
+
+  /*
+    Upscale the OCR region.
+
+    This gives Tesseract more pixels to work with,
+    especially on an iPhone camera.
+  */
+
+  const scale = 2;
+
+  cropCanvas.width =
+    cropWidth * scale;
+
+  cropCanvas.height =
+    cropHeight * scale;
+
 
   const ctx =
     cropCanvas.getContext("2d");
+
 
   ctx.drawImage(
 
@@ -288,10 +330,11 @@ function cropScanningBox(sourceCanvas) {
 
     0,
     0,
-    cropWidth,
-    cropHeight
+    cropWidth * scale,
+    cropHeight * scale
 
   );
+
 
   return cropCanvas;
 
@@ -305,18 +348,16 @@ function cropScanningBox(sourceCanvas) {
 function extractUIN(text) {
 
   /*
-    Example OCR:
+    OCR examples:
 
         UIN 678963265
-
-    or:
 
         UIN
         678963265
 
-    or:
-
         UIN: 678963265
+
+        UIN 678 963 265
   */
 
   const normalized =
@@ -325,6 +366,7 @@ function extractUIN(text) {
       .replace(/\s+/g, " ")
       .trim();
 
+
   console.log("OCR:", normalized);
 
   debug.textContent =
@@ -332,7 +374,7 @@ function extractUIN(text) {
 
 
   // -----------------------------------------------
-  // Look for UIN followed by 9 digits
+  // UIN + 9 consecutive digits
   // -----------------------------------------------
 
   let match =
@@ -348,11 +390,7 @@ function extractUIN(text) {
 
 
   // -----------------------------------------------
-  // Sometimes OCR separates the digits
-  //
-  // Example:
-  //
-  // UIN 678 963 265
+  // UIN + digits separated into 3 groups
   // -----------------------------------------------
 
   match =
@@ -367,6 +405,24 @@ function extractUIN(text) {
       match[2] +
       match[3]
     );
+
+  }
+
+
+  // -----------------------------------------------
+  // Fallback:
+  // If OCR misses "UIN", look for any 9-digit
+  // number in the bottom-left crop.
+  // -----------------------------------------------
+
+  match =
+    normalized.match(
+      /\b(\d{9})\b/
+    );
+
+  if (match) {
+
+    return match[1];
 
   }
 
@@ -424,7 +480,7 @@ function clearResult() {
   debug.textContent = "";
 
   status.textContent =
-    "Position UIN in the box";
+    "Position iCard in this box";
 
 }
 
@@ -441,10 +497,12 @@ async function scanFrame() {
 
   const now = Date.now();
 
+
   /*
     Don't run OCR continuously at 30 FPS.
 
-    Wait approximately 1 second between OCR attempts.
+    Wait approximately 1 second
+    between OCR attempts.
   */
 
   if (now - lastScanTime < 1000) {
@@ -458,6 +516,15 @@ async function scanFrame() {
 
     const frame =
       captureFrame();
+
+
+    /*
+      IMPORTANT:
+
+      Only the bottom-left portion
+      of the visible scan box is
+      sent to OCR.
+    */
 
     const cropped =
       cropScanningBox(frame);
@@ -475,6 +542,7 @@ async function scanFrame() {
         "eng",
 
         {
+
           logger: message => {
 
             if (
@@ -493,6 +561,7 @@ async function scanFrame() {
             }
 
           }
+
         }
 
       );
@@ -509,17 +578,19 @@ async function scanFrame() {
     if (uin) {
 
       /*
-        Stop scanning while showing result.
+        Stop scanning while
+        showing the result.
       */
 
       scanning = false;
+
 
       verifyUIN(uin);
 
 
       /*
-        Automatically reset after
-        2.5 seconds.
+        Automatically reset
+        after 2.5 seconds.
       */
 
       setTimeout(() => {
@@ -535,7 +606,7 @@ async function scanFrame() {
     } else {
 
       status.textContent =
-        "Position UIN in the box";
+        "Position iCard in this box";
 
     }
 
@@ -563,9 +634,10 @@ function scanLoop() {
 
   scanFrame();
 
+
   /*
-    Check frequently, while OCR itself
-    is throttled to ~1 second.
+    Check frequently, while OCR
+    itself is throttled to ~1 second.
   */
 
   setTimeout(
@@ -586,4 +658,3 @@ startCamera();
 
 </body>
 </html>
-```
