@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,42 +13,158 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <style>
-  #verification-result {
-    margin: 12px auto 0;
-    min-height: 90px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-  }
+    * {
+      box-sizing: border-box;
+    }
 
-  #result {
-    width: 55px;
-    height: 55px;
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      text-align: center;
+    }
 
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    h1 {
+      margin: 20px 0 8px;
+      font-size: 24px;
+    }
 
-    font-size: 55px;
-    line-height: 1;
-  }
+    #status {
+      color: #aaa;
+      font-size: 16px;
+      margin-bottom: 18px;
+    }
 
-  #uin {
-    font-size: 22px;
-    font-weight: 600;
-    min-height: 30px;
-    margin-top: 2px;
-  }
+    #camera-container {
+      position: relative;
+      width: 95%;
+      max-width: 600px;
+      margin: auto;
+      overflow: hidden;
+      border-radius: 14px;
+    }
 
-  #result.green {
-    color: #20c76b;
-  }
+    video {
+      width: 100%;
+      display: block;
+    }
 
-  #result.red {
-    color: #ff4040;
-  }
-</style>
+    /* --------------------------------------------------
+       Centered scanning box
+       ORIGINAL SIZE AND POSITION
+       -------------------------------------------------- */
+
+    #scan-box {
+      position: absolute;
+      left: 8%;
+      top: 35%;
+      width: 84%;
+      height: 30%;
+
+      border: 3px solid white;
+      border-radius: 12px;
+
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+
+      pointer-events: none;
+    }
+
+    #scan-label {
+      background: rgba(0, 0, 0, 0.75);
+      padding: 8px 14px;
+      border-radius: 0 0 8px 8px;
+      font-size: 16px;
+      margin-top: -1px;
+    }
+
+    /* --------------------------------------------------
+       Verification result
+       
+       Positioned directly BELOW the scan box,
+       but still OVER the camera.
+       -------------------------------------------------- */
+
+    #verification-result {
+      position: absolute;
+
+      left: 8%;
+      width: 84%;
+
+      /*
+        Scan box:
+          top = 35%
+          height = 30%
+
+        Therefore bottom = 65%.
+
+        Put result just below it.
+      */
+
+      top: 66%;
+
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+
+      pointer-events: none;
+    }
+
+    #result {
+      width: 55px;
+      height: 55px;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      font-size: 55px;
+      line-height: 1;
+
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    #uin {
+      font-size: 22px;
+      font-weight: 600;
+
+      min-height: 30px;
+      margin-top: 2px;
+
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    #verification-message {
+      font-size: 16px;
+      font-weight: 600;
+
+      min-height: 22px;
+      margin-top: 2px;
+
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    #result.green,
+    #verification-message.green {
+      color: #20c76b;
+    }
+
+    #result.red,
+    #verification-message.red {
+      color: #ff4040;
+    }
+
+    #debug {
+      color: #777;
+      font-size: 12px;
+      margin-top: 20px;
+      padding: 0 15px;
+      word-break: break-word;
+    }
+  </style>
 </head>
 
 <body>
@@ -67,35 +184,65 @@
       muted
     ></video>
 
+
+    <!-- Scan box -->
+
     <div id="scan-box">
       <div id="scan-label">
         Position iCard in this box
       </div>
     </div>
 
+
+    <!-- Verification result
+         Positioned directly below scan box -->
+
+    <div id="verification-result">
+
+      <div id="result"></div>
+
+      <div id="uin"></div>
+
+      <div id="verification-message"></div>
+
+    </div>
+
   </div>
 
-<div id="verification-result">
-  <div id="result"></div>
-  <div id="uin"></div>
-</div>
 
-<div id="debug"></div>
+  <div id="debug"></div>
 
-  <canvas id="canvas" style="display:none;"></canvas>
+  <canvas
+    id="canvas"
+    style="display:none;"
+  ></canvas>
 
 
 <script>
 
 const TARGET_UIN = "678963265";
 
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
+const video =
+  document.getElementById("video");
 
-const result = document.getElementById("result");
-const uinDisplay = document.getElementById("uin");
-const status = document.getElementById("status");
-const debug = document.getElementById("debug");
+const canvas =
+  document.getElementById("canvas");
+
+const result =
+  document.getElementById("result");
+
+const uinDisplay =
+  document.getElementById("uin");
+
+const verificationMessage =
+  document.getElementById("verification-message");
+
+const status =
+  document.getElementById("status");
+
+const debug =
+  document.getElementById("debug");
+
 
 let scanning = false;
 let lastScanTime = 0;
@@ -109,38 +256,48 @@ async function startCamera() {
 
   try {
 
-    const stream = await navigator.mediaDevices.getUserMedia({
+    const stream =
+      await navigator.mediaDevices.getUserMedia({
 
-      video: {
-        facingMode: {
-          ideal: "environment"
+        video: {
+
+          facingMode: {
+            ideal: "environment"
+          },
+
+          width: {
+            ideal: 1920
+          },
+
+          height: {
+            ideal: 1080
+          }
+
         },
 
-        width: {
-          ideal: 1920
-        },
+        audio: false
 
-        height: {
-          ideal: 1080
-        }
-      },
+      });
 
-      audio: false
 
-    });
+    video.srcObject =
+      stream;
 
-    video.srcObject = stream;
 
     await video.play();
 
+
     status.textContent =
       "Position iCard in this box";
+
 
     scanning = true;
 
     scanLoop();
 
-  } catch (error) {
+  }
+
+  catch (error) {
 
     console.error(error);
 
@@ -153,18 +310,28 @@ async function startCamera() {
 
 
 // --------------------------------------------------
-// Capture the camera frame
+// Capture camera frame
 // --------------------------------------------------
 
 function captureFrame() {
 
-  const width = video.videoWidth;
-  const height = video.videoHeight;
+  const width =
+    video.videoWidth;
 
-  canvas.width = width;
-  canvas.height = height;
+  const height =
+    video.videoHeight;
 
-  const ctx = canvas.getContext("2d");
+
+  canvas.width =
+    width;
+
+  canvas.height =
+    height;
+
+
+  const ctx =
+    canvas.getContext("2d");
+
 
   ctx.drawImage(
     video,
@@ -174,49 +341,55 @@ function captureFrame() {
     height
   );
 
+
   return canvas;
 
 }
 
 
 // --------------------------------------------------
-// Crop BOTTOM-LEFT portion of scanning box
+// Crop bottom-left portion of scanning box
 // --------------------------------------------------
 
 function cropScanningBox(sourceCanvas) {
 
-  const width = sourceCanvas.width;
-  const height = sourceCanvas.height;
+  const width =
+    sourceCanvas.width;
+
+  const height =
+    sourceCanvas.height;
+
 
   /*
-    Visible scanning box:
+    Visible scan box:
 
         left:   8%
         top:   35%
         width: 84%
         height:30%
 
-    The UIN is located toward the
-    BOTTOM-LEFT of this box.
-
     OCR region:
 
-        left part  = 55% of box width
-        bottom part = 40% of box height
+        left 60% of scan box
+        bottom 40% of scan box
   */
 
-  const boxX = width * 0.08;
-  const boxY = height * 0.35;
 
-  const boxWidth = width * 0.84;
-  const boxHeight = height * 0.30;
+  const boxX =
+    width * 0.08;
+
+  const boxY =
+    height * 0.35;
+
+  const boxWidth =
+    width * 0.84;
+
+  const boxHeight =
+    height * 0.30;
 
 
-  // -----------------------------------------------
-  // UIN OCR region
-  // -----------------------------------------------
-
-  const x = boxX;
+  const x =
+    boxX;
 
   const y =
     boxY +
@@ -234,13 +407,11 @@ function cropScanningBox(sourceCanvas) {
 
 
   /*
-    Upscale the OCR region.
-
-    This gives Tesseract more pixels to work with,
-    especially on an iPhone camera.
+    Upscale OCR region.
   */
 
   const scale = 2;
+
 
   cropCanvas.width =
     cropWidth * scale;
@@ -281,19 +452,6 @@ function cropScanningBox(sourceCanvas) {
 
 function extractUIN(text) {
 
-  /*
-    OCR examples:
-
-        UIN 678963265
-
-        UIN
-        678963265
-
-        UIN: 678963265
-
-        UIN 678 963 265
-  */
-
   const normalized =
     text
       .toUpperCase()
@@ -301,7 +459,11 @@ function extractUIN(text) {
       .trim();
 
 
-  console.log("OCR:", normalized);
+  console.log(
+    "OCR:",
+    normalized
+  );
+
 
   debug.textContent =
     "OCR: " + normalized;
@@ -316,6 +478,7 @@ function extractUIN(text) {
       /UIN[\s:.-]*(\d{9})/
     );
 
+
   if (match) {
 
     return match[1];
@@ -324,13 +487,14 @@ function extractUIN(text) {
 
 
   // -----------------------------------------------
-  // UIN + digits separated into 3 groups
+  // UIN + digits separated into groups
   // -----------------------------------------------
 
   match =
     normalized.match(
       /UIN[\s:.-]*(\d{3})[\s-]*(\d{3})[\s-]*(\d{3})/
     );
+
 
   if (match) {
 
@@ -344,15 +508,14 @@ function extractUIN(text) {
 
 
   // -----------------------------------------------
-  // Fallback:
-  // If OCR misses "UIN", look for any 9-digit
-  // number in the bottom-left crop.
+  // Fallback: any 9-digit number
   // -----------------------------------------------
 
   match =
     normalized.match(
       /\b(\d{9})\b/
     );
+
 
   if (match) {
 
@@ -378,21 +541,35 @@ function verifyUIN(uin) {
 
   if (uin === TARGET_UIN) {
 
-    result.textContent = "✓";
+    result.textContent =
+      "✓";
 
-    result.className = "green";
+    result.className =
+      "green";
 
-    status.textContent =
+
+    verificationMessage.textContent =
       "ID VERIFIED";
 
-  } else {
+    verificationMessage.className =
+      "green";
 
-    result.textContent = "✕";
+  }
 
-    result.className = "red";
+  else {
 
-    status.textContent =
+    result.textContent =
+      "✕";
+
+    result.className =
+      "red";
+
+
+    verificationMessage.textContent =
       "UIN DOES NOT MATCH";
+
+    verificationMessage.className =
+      "red";
 
   }
 
@@ -405,13 +582,27 @@ function verifyUIN(uin) {
 
 function clearResult() {
 
-  result.textContent = "";
+  result.textContent =
+    "";
 
-  result.className = "";
+  result.className =
+    "";
 
-  uinDisplay.textContent = "";
 
-  debug.textContent = "";
+  uinDisplay.textContent =
+    "";
+
+
+  verificationMessage.textContent =
+    "";
+
+  verificationMessage.className =
+    "";
+
+
+  debug.textContent =
+    "";
+
 
   status.textContent =
     "Position iCard in this box";
@@ -429,21 +620,27 @@ async function scanFrame() {
     return;
   }
 
-  const now = Date.now();
+
+  const now =
+    Date.now();
 
 
   /*
-    Don't run OCR continuously at 30 FPS.
-
-    Wait approximately 1 second
-    between OCR attempts.
+    Approximately one OCR attempt
+    per second.
   */
 
-  if (now - lastScanTime < 1000) {
+  if (
+    now - lastScanTime < 1000
+  ) {
+
     return;
+
   }
 
-  lastScanTime = now;
+
+  lastScanTime =
+    now;
 
 
   try {
@@ -453,11 +650,8 @@ async function scanFrame() {
 
 
     /*
-      IMPORTANT:
-
       Only the bottom-left portion
-      of the visible scan box is
-      sent to OCR.
+      of the scan box is OCR'd.
     */
 
     const cropped =
@@ -489,6 +683,7 @@ async function scanFrame() {
                   message.progress * 100
                 );
 
+
               status.textContent =
                 `Reading UIN... ${progress}%`;
 
@@ -513,38 +708,43 @@ async function scanFrame() {
 
       /*
         Stop scanning while
-        showing the result.
+        displaying result.
       */
 
-      scanning = false;
+      scanning =
+        false;
 
 
       verifyUIN(uin);
 
 
       /*
-        Automatically reset
-        after 2.5 seconds.
+        Reset after 2.5 seconds.
       */
 
       setTimeout(() => {
 
         clearResult();
 
-        scanning = true;
+        scanning =
+          true;
 
         scanLoop();
 
       }, 2500);
 
-    } else {
+    }
+
+    else {
 
       status.textContent =
         "Position iCard in this box";
 
     }
 
-  } catch (error) {
+  }
+
+  catch (error) {
 
     console.error(error);
 
@@ -566,13 +766,9 @@ function scanLoop() {
     return;
   }
 
+
   scanFrame();
 
-
-  /*
-    Check frequently, while OCR
-    itself is throttled to ~1 second.
-  */
 
   setTimeout(
     scanLoop,
@@ -592,3 +788,4 @@ startCamera();
 
 </body>
 </html>
+```
