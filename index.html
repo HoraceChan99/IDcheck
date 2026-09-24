@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +8,7 @@
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
   />
 
-  <title>UIC ID Checker Demo</title>
+  <title>UIC ID Checker</title>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
@@ -18,78 +19,97 @@
 
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #111;
       color: white;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       text-align: center;
     }
 
     h1 {
-      font-size: 24px;
       margin: 20px 0 8px;
+      font-size: 24px;
     }
 
     #status {
       color: #aaa;
-      margin-bottom: 15px;
+      font-size: 16px;
+      margin-bottom: 18px;
     }
 
     #camera-container {
       position: relative;
       width: 95%;
-      max-width: 500px;
+      max-width: 600px;
       margin: auto;
+      overflow: hidden;
+      border-radius: 14px;
     }
 
     video {
       width: 100%;
-      border-radius: 12px;
       display: block;
     }
 
-    /* Approximate location of the UIN on the card */
+    /* Centered scanning box */
     #scan-box {
       position: absolute;
-      left: 5%;
-      bottom: 5%;
-      width: 45%;
-      height: 20%;
+      left: 8%;
+      top: 35%;
+      width: 84%;
+      height: 30%;
+
       border: 3px solid white;
-      border-radius: 8px;
+      border-radius: 12px;
+
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+
       pointer-events: none;
     }
 
-    button {
-      margin-top: 20px;
-      padding: 14px 28px;
-      font-size: 18px;
-      border: none;
-      border-radius: 10px;
-      background: white;
-      color: black;
+    #scan-label {
+      background: rgba(0, 0, 0, 0.75);
+      padding: 8px 14px;
+      border-radius: 0 0 8px 8px;
+      font-size: 16px;
+      margin-top: -1px;
     }
 
     #result {
-      margin: 25px auto;
-      font-size: 100px;
-      width: 150px;
-      height: 150px;
+      margin: 25px auto 5px;
+
+      width: 120px;
+      height: 120px;
+
       display: flex;
       align-items: center;
       justify-content: center;
+
+      font-size: 100px;
+      line-height: 1;
     }
 
     #uin {
-      font-size: 24px;
-      min-height: 30px;
+      font-size: 26px;
+      font-weight: 600;
+      min-height: 36px;
     }
 
-    .green {
+    #result.green {
       color: #20c76b;
     }
 
-    .red {
+    #result.red {
       color: #ff4040;
+    }
+
+    #debug {
+      color: #777;
+      font-size: 12px;
+      margin-top: 20px;
+      padding: 0 15px;
+      word-break: break-word;
     }
   </style>
 </head>
@@ -98,32 +118,50 @@
 
   <h1>UIC ID Checker</h1>
 
-  <div id="status">Point your camera at the UIC i-card</div>
-
-  <div id="camera-container">
-    <video id="video" autoplay playsinline></video>
-    <div id="scan-box"></div>
+  <div id="status">
+    Position UIN in the box
   </div>
 
-  <button id="scanButton">SCAN ID</button>
+  <div id="camera-container">
+
+    <video
+      id="video"
+      autoplay
+      playsinline
+      muted
+    ></video>
+
+    <div id="scan-box">
+      <div id="scan-label">
+        Position UIN in this box
+      </div>
+    </div>
+
+  </div>
 
   <div id="result"></div>
 
   <div id="uin"></div>
 
+  <div id="debug"></div>
+
   <canvas id="canvas" style="display:none;"></canvas>
 
+
 <script>
+
 const TARGET_UIN = "678963265";
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
-const scanButton = document.getElementById("scanButton");
+
 const result = document.getElementById("result");
 const uinDisplay = document.getElementById("uin");
 const status = document.getElementById("status");
+const debug = document.getElementById("debug");
 
-let stream = null;
+let scanning = false;
+let lastScanTime = 0;
 
 
 // --------------------------------------------------
@@ -131,44 +169,63 @@ let stream = null;
 // --------------------------------------------------
 
 async function startCamera() {
+
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+
       video: {
         facingMode: {
           ideal: "environment"
         },
+
         width: {
           ideal: 1920
         },
+
         height: {
           ideal: 1080
         }
       },
+
       audio: false
+
     });
 
     video.srcObject = stream;
 
-    status.textContent = "Position the UIC i-card inside the box";
+    await video.play();
+
+    status.textContent =
+      "Position UIN in the box";
+
+    scanning = true;
+
+    scanLoop();
 
   } catch (error) {
+
     console.error(error);
-    status.textContent = "Camera access failed.";
+
+    status.textContent =
+      "Camera access failed. Please allow camera access.";
+
   }
+
 }
 
 
 // --------------------------------------------------
-// Capture image
+// Capture the camera frame
 // --------------------------------------------------
 
-function captureImage() {
+function captureFrame() {
 
-  const videoWidth = video.videoWidth;
-  const videoHeight = video.videoHeight;
+  const width = video.videoWidth;
+  const height = video.videoHeight;
 
-  canvas.width = videoWidth;
-  canvas.height = videoHeight;
+  canvas.width = width;
+  canvas.height = height;
 
   const ctx = canvas.getContext("2d");
 
@@ -176,190 +233,309 @@ function captureImage() {
     video,
     0,
     0,
-    videoWidth,
-    videoHeight
+    width,
+    height
   );
 
   return canvas;
+
 }
 
 
 // --------------------------------------------------
-// Crop bottom-left UIN area
+// Crop the CENTER scanning box
 // --------------------------------------------------
 
-function cropUINRegion(sourceCanvas) {
+function cropScanningBox(sourceCanvas) {
 
   const width = sourceCanvas.width;
   const height = sourceCanvas.height;
 
   /*
-    Approximate UIN location:
+    This corresponds approximately to:
 
-    left  = 5%
-    right = 50%
-    bottom = 5%
-    height = 20%
+       left:   8%
+       top:   35%
+       width: 84%
+       height:30%
+
+    Same proportions as the visible box.
   */
 
-  const cropX = width * 0.05;
-  const cropY = height * 0.75;
+  const x = width * 0.08;
+  const y = height * 0.35;
 
-  const cropWidth = width * 0.45;
-  const cropHeight = height * 0.20;
+  const cropWidth = width * 0.84;
+  const cropHeight = height * 0.30;
 
-  const cropCanvas = document.createElement("canvas");
+  const cropCanvas =
+    document.createElement("canvas");
 
   cropCanvas.width = cropWidth;
   cropCanvas.height = cropHeight;
 
-  const ctx = cropCanvas.getContext("2d");
+  const ctx =
+    cropCanvas.getContext("2d");
 
   ctx.drawImage(
+
     sourceCanvas,
-    cropX,
-    cropY,
+
+    x,
+    y,
     cropWidth,
     cropHeight,
+
     0,
     0,
     cropWidth,
     cropHeight
+
   );
 
   return cropCanvas;
+
 }
 
 
 // --------------------------------------------------
-// Extract 9-digit UIN
+// Extract UIN
 // --------------------------------------------------
 
 function extractUIN(text) {
 
-  console.log("OCR TEXT:");
-  console.log(text);
-
   /*
-    OCR may interpret:
+    Example OCR:
 
-      UIN 678963265
+        UIN 678963265
 
-    as:
+    or:
 
-      UIN
-      678963265
+        UIN
+        678963265
 
-    or even:
+    or:
 
-      UIN 678963265
-
-    We therefore look for any 9-digit sequence.
+        UIN: 678963265
   */
 
-  const matches = text.match(/\b\d{9}\b/g);
+  const normalized =
+    text
+      .toUpperCase()
+      .replace(/\s+/g, " ")
+      .trim();
 
-  if (matches && matches.length > 0) {
-    return matches[0];
+  console.log("OCR:", normalized);
+
+  debug.textContent =
+    "OCR: " + normalized;
+
+
+  // -----------------------------------------------
+  // Look for UIN followed by 9 digits
+  // -----------------------------------------------
+
+  let match =
+    normalized.match(
+      /UIN[\s:.-]*(\d{9})/
+    );
+
+  if (match) {
+
+    return match[1];
+
   }
 
-  /*
-    Sometimes OCR inserts spaces:
 
-      678 963 265
+  // -----------------------------------------------
+  // Sometimes OCR separates the digits
+  //
+  // Example:
+  //
+  // UIN 678 963 265
+  // -----------------------------------------------
 
-  */
+  match =
+    normalized.match(
+      /UIN[\s:.-]*(\d{3})[\s-]*(\d{3})[\s-]*(\d{3})/
+    );
 
-  const cleaned = text.replace(/\D/g, "");
+  if (match) {
 
-  if (cleaned.length >= 9) {
-    const possibleUIN = cleaned.match(/\d{9}/);
+    return (
+      match[1] +
+      match[2] +
+      match[3]
+    );
 
-    if (possibleUIN) {
-      return possibleUIN[0];
-    }
   }
+
 
   return null;
+
 }
 
 
 // --------------------------------------------------
-// Scan
+// Verify UIN
 // --------------------------------------------------
 
-async function scanID() {
+function verifyUIN(uin) {
+
+  uinDisplay.textContent =
+    "UIN: " + uin;
+
+
+  if (uin === TARGET_UIN) {
+
+    result.textContent = "✓";
+
+    result.className = "green";
+
+    status.textContent =
+      "ID VERIFIED";
+
+  } else {
+
+    result.textContent = "✕";
+
+    result.className = "red";
+
+    status.textContent =
+      "UIN DOES NOT MATCH";
+
+  }
+
+}
+
+
+// --------------------------------------------------
+// Clear result
+// --------------------------------------------------
+
+function clearResult() {
 
   result.textContent = "";
+
   result.className = "";
+
   uinDisplay.textContent = "";
 
-  status.textContent = "Scanning...";
+  debug.textContent = "";
 
-  scanButton.disabled = true;
+  status.textContent =
+    "Position UIN in the box";
+
+}
+
+
+// --------------------------------------------------
+// OCR one frame
+// --------------------------------------------------
+
+async function scanFrame() {
+
+  if (!scanning) {
+    return;
+  }
+
+  const now = Date.now();
+
+  /*
+    Don't run OCR continuously at 30 FPS.
+
+    Wait approximately 1 second between OCR attempts.
+  */
+
+  if (now - lastScanTime < 1000) {
+    return;
+  }
+
+  lastScanTime = now;
+
 
   try {
 
-    const fullImage = captureImage();
+    const frame =
+      captureFrame();
 
-    const uinImage = cropUINRegion(fullImage);
+    const cropped =
+      cropScanningBox(frame);
 
-    /*
-      Tesseract OCR
-    */
 
-    const { data: { text } } = await Tesseract.recognize(
-      uinImage,
-      "eng",
-      {
-        logger: message => {
+    status.textContent =
+      "Reading UIN...";
 
-          if (message.status === "recognizing text") {
 
-            const progress =
-              Math.round(message.progress * 100);
+    const resultData =
+      await Tesseract.recognize(
 
-            status.textContent =
-              `Reading UIN... ${progress}%`;
+        cropped,
+
+        "eng",
+
+        {
+          logger: message => {
+
+            if (
+              message.status ===
+              "recognizing text"
+            ) {
+
+              const progress =
+                Math.round(
+                  message.progress * 100
+                );
+
+              status.textContent =
+                `Reading UIN... ${progress}%`;
+
+            }
+
           }
         }
-      }
-    );
 
-    const uin = extractUIN(text);
+      );
 
-    if (!uin) {
 
-      status.textContent = "Could not detect a 9-digit UIN.";
+    const text =
+      resultData.data.text;
 
-      result.textContent = "❓";
 
-      scanButton.disabled = false;
+    const uin =
+      extractUIN(text);
 
-      return;
-    }
 
-    console.log("Detected UIN:", uin);
+    if (uin) {
 
-    uinDisplay.textContent = `UIN: ${uin}`;
+      /*
+        Stop scanning while showing result.
+      */
 
-    // ------------------------------------------------
-    // Compare UIN
-    // ------------------------------------------------
+      scanning = false;
 
-    if (uin === TARGET_UIN) {
+      verifyUIN(uin);
 
-      result.textContent = "✓";
-      result.className = "green";
 
-      status.textContent = "ID VERIFIED";
+      /*
+        Automatically reset after
+        2.5 seconds.
+      */
+
+      setTimeout(() => {
+
+        clearResult();
+
+        scanning = true;
+
+        scanLoop();
+
+      }, 2500);
 
     } else {
 
-      result.textContent = "✕";
-      result.className = "red";
-
-      status.textContent = "UIN DOES NOT MATCH";
+      status.textContent =
+        "Position UIN in the box";
 
     }
 
@@ -367,21 +543,37 @@ async function scanID() {
 
     console.error(error);
 
-    status.textContent = "Scanning failed.";
-
-    result.textContent = "⚠️";
+    status.textContent =
+      "Scanning...";
 
   }
 
-  scanButton.disabled = false;
 }
 
 
 // --------------------------------------------------
-// Button
+// Continuous scanning loop
 // --------------------------------------------------
 
-scanButton.addEventListener("click", scanID);
+function scanLoop() {
+
+  if (!scanning) {
+    return;
+  }
+
+  scanFrame();
+
+  /*
+    Check frequently, while OCR itself
+    is throttled to ~1 second.
+  */
+
+  setTimeout(
+    scanLoop,
+    100
+  );
+
+}
 
 
 // --------------------------------------------------
@@ -394,3 +586,4 @@ startCamera();
 
 </body>
 </html>
+```
